@@ -44,10 +44,7 @@
     .hint{color:#6b614f;font-size:13px}
     .notice{background:#fff3cd;border:1px solid #ffe69c;border-radius:10px;color:#604c00;padding:10px}
 
-    .grid-2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
-    .card{background:#fff;border:1px solid #e7e1d6;border-radius:12px;padding:12px}
     .kpi{display:flex;gap:8px;align-items:center;font-weight:700}
-
     .team-label{font-weight:700;color:var(--green-dark)}
     .points{font-weight:800}
     .muted{color:#777}
@@ -179,9 +176,9 @@ function toCSV(arr){
 /* =========================
    Storage Keys & State
 ========================= */
-const LS_KEY = 'scoreboard_players_v6';
+const LS_KEY = 'scoreboard_players_v7';
 const PAR_KEY = 'scoreboard_par_v1';
-const RYDER_KEY = 'scoreboard_ryder_v1';
+const RYDER_KEY = 'scoreboard_ryder_v2';
 
 let players = []; // {id,firstName,lastName,name,nickname,team,email,phone,handicap,r1..r4}
 let view = 'overall';
@@ -191,13 +188,11 @@ let par = { r1:null, r2:null, r3:null, r4:null };
 // Ryder state
 const FORMATS = ['Singles','Best Ball','Scramble','Alt Shot','Shamble'];
 let ryder = {
-  teams: [],              // e.g., ['Ozark','Valley']
-  teamA: null,            // string
-  teamB: null,            // string
+  teams: [],
+  teamA: null,
+  teamB: null,
   roundFormat: { r1:'Best Ball', r2:'Scramble', r3:'Alt Shot', r4:'Singles' },
-  matches: {              // round -> [ {id,format,ozarkIds:[],valleyIds:[],result:'A'|'B'|'H'} ]
-    r1: [], r2: [], r3: [], r4: []
-  }
+  matches: { r1:[], r2:[], r3:[], r4:[] }
 };
 
 /* =========================
@@ -213,7 +208,6 @@ const btnExportCSV = document.getElementById('btnExportCSV');
 const btnExportJSON = document.getElementById('btnExportJSON');
 const btnClear = document.getElementById('btnClear');
 const sampleNote = document.getElementById('sampleNote');
-const panelMain = document.getElementById('panelMain');
 const teamANameEl = document.getElementById('teamAName');
 const teamBNameEl = document.getElementById('teamBName');
 const teamAPointsEl = document.getElementById('teamAPoints');
@@ -228,13 +222,11 @@ const ryderFooter = document.getElementById('ryderFooter');
   try{ const rp = localStorage.getItem(PAR_KEY); if(rp) par = {...par, ...(JSON.parse(rp)||{})}; }catch{}
   try{ const rr = localStorage.getItem(RYDER_KEY); if(rr) ryder = {...ryder, ...(JSON.parse(rr)||{})}; }catch{}
 
-  // Par inputs
   document.getElementById('parR1').value = par.r1 ?? '';
   document.getElementById('parR2').value = par.r2 ?? '';
   document.getElementById('parR3').value = par.r3 ?? '';
   document.getElementById('parR4').value = par.r4 ?? '';
 
-  // Example block
   if(players.length===0){
     sampleNote.innerHTML = `Example CSV/TSV (copy/paste):
 <pre style="white-space:pre-wrap;margin:8px 0;">FirstName,LastName,Nickname,Team,Email,Phone,handicap,R1,R2,R3,R4
@@ -255,14 +247,13 @@ function saveRyder(){ localStorage.setItem(RYDER_KEY, JSON.stringify(ryder)); }
 /* =========================
    Tabs
 ========================= */
-const tabs = document.getElementById('tabs');
-Array.from(tabs.querySelectorAll('.tab')).forEach(btn=>{
-  btn.addEventListener('click', ()=>{
-    Array.from(tabs.children).forEach(b=>b.classList.remove('active'));
-    btn.classList.add('active');
-    view = btn.dataset.view;
-    render();
-  });
+document.getElementById('tabs').addEventListener('click', (e)=>{
+  const btn = e.target.closest('.tab');
+  if(!btn) return;
+  document.querySelectorAll('.tab').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  view = btn.dataset.view;
+  render();
 });
 
 /* =========================
@@ -273,7 +264,6 @@ function handleFiles(){ if(this.files && this.files[0]) readCSVFile(this.files[0
 
 ;['dragenter','dragover'].forEach(ev=>drop.addEventListener(ev, e=>{ e.preventDefault(); drop.classList.add('drag'); }));
 ;['dragleave','drop'].forEach(ev=>drop.addEventListener(ev, e=>{ e.preventDefault(); drop.classList.remove('drag'); }));
-
 drop.addEventListener('drop', e=>{
   const f = e.dataTransfer.files && e.dataTransfer.files[0];
   if(f) readCSVFile(f);
@@ -342,7 +332,7 @@ function readCSVFile(file){
 
     players = out; save();
 
-    // Initialize Ryder team list after import
+    // Init Ryder team list after import
     const teams = Array.from(new Set(players.map(p=>p.team).filter(Boolean)));
     ryder.teams = teams;
     if(!ryder.teamA || !teams.includes(ryder.teamA)) ryder.teamA = teams[0] || 'Team A';
@@ -418,7 +408,6 @@ function render(){
     renderRyder();
     return;
   } else {
-    // standard board
     ryderFooter.style.display = 'none';
   }
 
@@ -492,7 +481,6 @@ function render(){
   }).join('');
 
   tbody.innerHTML = body;
-  // bind inputs
   players.forEach(p=>{
     document.querySelectorAll(`input.score[data-id="${CSS.escape(p.id)}"]`).forEach(inp=>{
       inp.addEventListener('input', ()=>{
@@ -508,10 +496,9 @@ function render(){
 }
 
 /* =========================
-   RYDER VIEW
+   RYDER VIEW (fixed slot-aware selects)
 ========================= */
 function renderRyder(){
-  // Build Ryder UI inline inside the table area
   ryderFooter.style.display = 'flex';
 
   // Derive teams
@@ -523,10 +510,10 @@ function renderRyder(){
   const teamAPlayers = players.filter(p=>p.team===ryder.teamA);
   const teamBPlayers = players.filter(p=>p.team===ryder.teamB);
 
-  teamANameEl.textContent = ryder.teamA;
-  teamBNameEl.textContent = ryder.teamB;
+  document.getElementById('teamAName').textContent = ryder.teamA;
+  document.getElementById('teamBName').textContent = ryder.teamB;
 
-  // Header (custom controls)
+  // Header with controls
   const headerHtml = `
     <tr>
       <th colspan="6">
@@ -562,28 +549,37 @@ function renderRyder(){
   `;
   thead.innerHTML = headerHtml;
 
-  // Combine matches from all rounds into one view
+  // Helper: select builder for a specific slot (prevents same person twice by mistake)
+  function ryderSelect(playersList, selectedId, mid, side, slot){
+    const opts = ['<option value="">—</option>']
+      .concat(playersList.map(p=>{
+        const sel = String(selectedId||'') === String(p.id) ? ' selected' : '';
+        const label = `${escapeHtml(p.firstName||'')} ${escapeHtml(p.lastName||'')}`.trim();
+        return `<option value="${p.id}"${sel}>${label}</option>`;
+      }));
+    return `<select class="ryPick" data-mid="${mid}" data-side="${side}" data-slot="${slot}">
+      ${opts.join('')}
+    </select>`;
+  }
+
+  // Combine matches from all rounds into one table
   const allMatches = ['r1','r2','r3','r4'].flatMap(r =>
     (ryder.matches[r]||[]).map(m=>({...m, round:r}))
   );
 
-  // Render rows
-  const rowHtml = allMatches.map((m, idx)=>{
+  const bodyHtml = allMatches.map((m, idx)=>{
     const fmt = m.format || ryder.roundFormat[m.round];
     const size = (fmt==='Singles') ? 1 : 2;
+    const aIds = Array.isArray(m.ozarkIds) ? m.ozarkIds : [];
+    const bIds = Array.isArray(m.valleyIds) ? m.valleyIds : [];
 
-    const teamAOpts = teamAPlayers.map(p=>`<option value="${p.id}" ${m.ozarkIds?.includes(String(p.id))?'selected':''}>${escapeHtml(p.firstName||'')} ${escapeHtml(p.lastName||'')}</option>`).join('');
-    const teamBOpts = teamBPlayers.map(p=>`<option value="${p.id}" ${m.valleyIds?.includes(String(p.id))?'selected':''}>${escapeHtml(p.firstName||'')} ${escapeHtml(p.lastName||'')}</option>`).join('');
+    const aSelects = Array.from({length:size}).map((_,i)=>
+      ryderSelect(teamAPlayers, aIds[i] || '', m.id, 'A', i)
+    ).join('<br/>');
 
-    const aSelects = Array.from({length:size}).map((_,i)=>`
-      <select class="ryPick" data-mid="${m.id}" data-side="A" data-slot="${i}">
-        <option value="">—</option>${teamAOpts}
-      </select>`).join('<br/>');
-
-    const bSelects = Array.from({length:size}).map((_,i)=>`
-      <select class="ryPick" data-mid="${m.id}" data-side="B" data-slot="${i}">
-        <option value="">—</option>${teamBOpts}
-      </select>`).join('<br/>');
+    const bSelects = Array.from({length:size}).map((_,i)=>
+      ryderSelect(teamBPlayers, bIds[i] || '', m.id, 'B', i)
+    ).join('<br/>');
 
     const resultSel = `
       <select class="ryRes" data-mid="${m.id}">
@@ -608,25 +604,24 @@ function renderRyder(){
     </tr>`;
   }).join('');
 
-  tbody.innerHTML = rowHtml || `<tr><td colspan="6" class="hint">No matches yet. Pick formats and click <strong>Build Matches</strong>.</td></tr>`;
+  tbody.innerHTML = bodyHtml || `<tr><td colspan="6" class="hint">No matches yet. Pick formats and click <strong>Build Matches</strong>.</td></tr>`;
 
   // Bind controls
   document.getElementById('ryTeamA').addEventListener('change', (e)=>{ ryder.teamA = e.target.value; saveRyder(); renderRyder(); });
   document.getElementById('ryTeamB').addEventListener('change', (e)=>{ ryder.teamB = e.target.value; saveRyder(); renderRyder(); });
   document.querySelectorAll('.ryFmt').forEach(sel=>{
-    sel.addEventListener('change', e=>{
-      const r = sel.dataset.round;
-      ryder.roundFormat[r] = sel.value; saveRyder(); renderRyder();
-    });
+    sel.addEventListener('change', ()=>{ ryder.roundFormat[sel.dataset.round] = sel.value; saveRyder(); renderRyder(); });
   });
-  const btnBuild = document.getElementById('ryBuild');
-  btnBuild.addEventListener('click', ()=>{
-    buildMatches(teamAPlayers, teamBPlayers);
+  document.getElementById('ryBuild').addEventListener('click', ()=>{
+    const A = players.filter(p=>p.team===ryder.teamA);
+    const B = players.filter(p=>p.team===ryder.teamB);
+    buildMatches(A, B);
     saveRyder(); renderRyder();
   });
   document.getElementById('ryClear').addEventListener('click', ()=>{
     ryder.matches = {r1:[],r2:[],r3:[],r4:[]}; saveRyder(); renderRyder();
   });
+
   document.querySelectorAll('.ryFmtRow').forEach(sel=>{
     sel.addEventListener('change', ()=>{
       const mid = sel.dataset.mid;
@@ -637,6 +632,8 @@ function renderRyder(){
       saveRyder(); renderRyder();
     });
   });
+
+  // Slot-aware pick listeners + simple same-side de-dupe
   document.querySelectorAll('.ryPick').forEach(sel=>{
     sel.addEventListener('change', ()=>{
       const mid = sel.dataset.mid, side = sel.dataset.side, slot = Number(sel.dataset.slot);
@@ -644,15 +641,24 @@ function renderRyder(){
         const m = ryder.matches[r].find(x=>String(x.id)===String(mid));
         if(m){
           const key = (side==='A' ? 'ozarkIds' : 'valleyIds');
-          const arr = m[key] || [];
+          const arr = Array.isArray(m[key]) ? [...m[key]] : [];
           arr[slot] = sel.value || null;
-          m[key] = arr.filter(v=>v); // remove empties
+
+          // De-dupe on the same side: if a duplicate appears, clear the current slot.
+          const cleaned = [];
+          for(const id of arr){
+            if(!id) { cleaned.push(null); continue; }
+            if(!cleaned.includes(id)) cleaned.push(id); else cleaned.push(null);
+          }
+          m[key] = cleaned.filter(v=>v); // remove nulls
+
           break;
         }
       }
       saveRyder();
     });
   });
+
   document.querySelectorAll('.ryRes').forEach(sel=>{
     sel.addEventListener('change', ()=>{
       const mid = sel.dataset.mid;
@@ -664,37 +670,32 @@ function renderRyder(){
     });
   });
 
-  // Points
   updateRyderPoints();
 }
 
 function buildMatches(teamAPlayers, teamBPlayers){
-  // create matches per round per format size
+  const pickSize = (fmt)=> (fmt==='Singles'?1:2);
   const makePairs = (A, B, size) => {
     const minGroups = Math.min(Math.floor(A.length/size), Math.floor(B.length/size));
     const matches = [];
     let aIdx=0, bIdx=0, idSeed=1;
 
+    // shallow copies + shuffle to vary
+    const As = A.slice().sort(()=>Math.random()-0.5);
+    const Bs = B.slice().sort(()=>Math.random()-0.5);
+
     for(let g=0; g<minGroups; g++){
-      const aIds = A.slice(aIdx, aIdx+size).map(p=>String(p.id)); aIdx += size;
-      const bIds = B.slice(bIdx, bIdx+size).map(p=>String(p.id)); bIdx += size;
+      const aIds = As.slice(aIdx, aIdx+size).map(p=>String(p.id)); aIdx += size;
+      const bIds = Bs.slice(bIdx, bIdx+size).map(p=>String(p.id)); bIdx += size;
       matches.push({ id: `m${Date.now()}_${idSeed++}`, format:null, ozarkIds:aIds, valleyIds:bIds, result:null });
     }
     return matches;
   };
 
-  const teamA = teamAPlayers.slice(); // shallow
-  const teamB = teamBPlayers.slice();
-  // simple shuffle to vary pairings slightly
-  teamA.sort(()=>Math.random()-0.5);
-  teamB.sort(()=>Math.random()-0.5);
-
-  const pickSize = (fmt)=> (fmt==='Singles'?1:2);
-
   for(const r of ['r1','r2','r3','r4']){
     const fmt = ryder.roundFormat[r] || 'Singles';
     const size = pickSize(fmt);
-    ryder.matches[r] = makePairs(teamA, teamB, size).map(m=>({...m, format:fmt}));
+    ryder.matches[r] = makePairs(teamAPlayers, teamBPlayers, size).map(m=>({...m, format:fmt}));
   }
 }
 
@@ -724,7 +725,8 @@ btnExportJSON.addEventListener('click', ()=>{
 });
 btnClear.addEventListener('click', ()=>{
   if(!confirm('Clear all loaded players, pars, and ryder matches?')) return;
-  players = []; par = {r1:null,r2:null,r3:null,r4:null}; ryder = {teams:[],teamA:null,teamB:null,roundFormat:{r1:'Best Ball',r2:'Scramble',r3:'Alt Shot',r4:'Singles'},matches:{r1:[],r2:[],r3:[],r4:[]}};
+  players = []; par = {r1:null,r2:null,r3:null,r4:null};
+  ryder = {teams:[],teamA:null,teamB:null,roundFormat:{r1:'Best Ball',r2:'Scramble',r3:'Alt Shot',r4:'Singles'},matches:{r1:[],r2:[],r3:[],r4:[]}};
   localStorage.removeItem(LS_KEY); localStorage.removeItem(PAR_KEY); localStorage.removeItem(RYDER_KEY);
   render();
 });
