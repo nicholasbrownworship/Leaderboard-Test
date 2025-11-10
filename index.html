@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>4‑Round Tournament Scoreboard</title>
+  <title>4-Round Tournament Scoreboard</title>
   <style>
     :root{
       --green:#244f3c; --green-dark:#163023; --gold:#d1a14b; --cream:#f5f0e6; --bg:#fcfaf6; --text:#222;
@@ -51,8 +51,8 @@
 </head>
 <body>
   <div class="wrap">
-    <h1>4‑Round Tournament Scoreboard</h1>
-    <p class="sub">Import a CSV of players, edit round scores inline, and export your updates. Rounds are R1–R4; totals and rankings update automatically.</p>
+    <h1>4-Round Tournament Scoreboard</h1>
+    <p class="sub">Import a CSV/TSV of players, edit round scores inline, and export your updates. Rounds are R1–R4; totals and rankings update automatically.</p>
 
     <div class="panel">
       <div class="row">
@@ -79,9 +79,13 @@
     <div class="panel">
       <div class="row">
         <input type="file" id="fileInput" accept=".csv,.tsv,.txt" />
-        <div class="drop" id="drop">Drop CSV here or click Choose File</div>
+        <div class="drop" id="drop">Drop CSV/TSV here or click Choose File</div>
       </div>
-      <p class="hint">CSV/TSV columns supported (flexible order; case‑insensitive): <code>id</code>, <code>name</code>, <code>nickname</code>, <code>team</code>, <code>handicap</code>, <code>r1</code>, <code>r2</code>, <code>r3</code>, <code>r4</code>. Missing rounds default to blank; unknown columns are ignored.</p>
+      <p class="hint">
+        CSV/TSV headers supported (any order, case-insensitive; spaces/underscores OK):
+        <code>FirstName</code>, <code>LastName</code> (or a single <code>Name</code>), <code>Nickname</code>, <code>Team</code>, <code>Email</code>, <code>Phone</code>, <code>handicap</code>,
+        and optional round columns <code>R1</code>–<code>R4</code> (or <code>Round1</code>…<code>Round4</code>, <code>Day1</code>…<code>Day4</code>). Missing rounds are left blank to edit inline.
+      </p>
       <div class="notice" id="sampleNote"></div>
     </div>
 
@@ -102,21 +106,20 @@
       </div>
       <div class="footer">
         <span class="hint" id="countHint">0 players</span>
-        <span class="hint">Edits auto‑save to your browser.</span>
+        <span class="hint">Edits auto-save to your browser.</span>
       </div>
     </div>
   </div>
 
 <script>
-// ====== Utility: Robust-ish CSV parser (handles quotes, commas, newlines) ======
+// ====== CSV/TSV parser with delimiter auto-detect ======
 function parseCSV(text){
-  // Auto-detect delimiter: prefer tab if present, else comma; fallback to semicolon
-  const firstLine = String(text).split(/
-?
-/)[0] || '';
-  const counts = {",": (firstLine.match(/,/g)||[]).length, "	": (firstLine.match(/	/g)||[]).length, ";": (firstLine.match(/;/g)||[]).length };
-  let delim = ",";
-  if(counts["	"] > counts[","]) delim = "	"; else if(counts[";"] > counts[","]) delim = ";";
+  const firstLine = String(text).split(/\r?\n/)[0] || '';
+  const counts = { ',': (firstLine.match(/,/g)||[]).length,
+                   '\t': (firstLine.match(/\t/g)||[]).length,
+                   ';': (firstLine.match(/;/g)||[]).length };
+  let delim = ',';
+  if(counts['\t'] > counts[',']) delim = '\t'; else if(counts[';'] > counts[',']) delim = ';';
 
   const rows=[]; let i=0, field='', row=[], inQuotes=false;
   while(i<text.length){
@@ -129,45 +132,40 @@ function parseCSV(text){
     } else {
       if(c==='"') inQuotes=true;
       else if(c===delim){ row.push(field); field=''; }
-      else if(c==='
-' || c==='
-'){
+      else if(c==='\n' || c==='\r'){
         if(field!=='' || row.length){ row.push(field); rows.push(row); row=[]; field=''; }
-        if(c==='
-' && text[i]==='
-') i++; // CRLF
+        if(c==='\r' && text[i]==='\n') i++; // CRLF
       } else field+=c;
     }
   }
   if(field!=='' || row.length) { row.push(field); rows.push(row); }
   return rows;
 }
+
 function toCSV(arr){
   const esc = v=>{
     if(v==null) return '';
     const s=String(v);
-    return /[",
-
-]/.test(s) ? '"'+s.replace(/"/g,'""')+'"' : s;
+    return /[",\n\r]/.test(s) ? '"'+s.replace(/"/g,'""')+'"' : s;
   };
-  const headers=['id','name','nickname','team','handicap','r1','r2','r3','r4'];
+  // Export using First/Last + handicap + rounds (email/phone omitted from export by design)
+  const headers=['id','FirstName','LastName','Nickname','Team','handicap','r1','r2','r3','r4'];
   const lines=[headers.join(',')];
   for(const p of arr){
     lines.push([
-      p.id||'',p.name||'',p.nickname||'',p.team||'',(Number.isFinite(p.handicap)?p.handicap:''),
-      p.r1??'',p.r2??'',p.r3??'',p.r4??''
+      p.id||'', p.firstName||'', p.lastName||'', p.nickname||'', p.team||'', (Number.isFinite(p.handicap)?p.handicap:''),
+      p.r1??'', p.r2??'', p.r3??'', p.r4??''
     ].map(esc).join(','));
   }
-  return lines.join('
-');
+  return lines.join('\n');
 }
 
 // ====== Storage Keys ======
-const LS_KEY = 'scoreboard_players_v1';
+const LS_KEY = 'scoreboard_players_v5';
 const PAR_KEY = 'scoreboard_par_v1';
 
 // ====== State ======
-let players = []; // {id,name,nickname,team,r1..r4}
+let players = []; // {id,firstName,lastName,name,nickname,team,email,phone,handicap,r1..r4}
 let view = 'overall';
 let sortBy = 'total';
 let par = { r1:null, r2:null, r3:null, r4:null };
@@ -194,7 +192,7 @@ const sampleNote = document.getElementById('sampleNote');
   });
 });
 
-// ====== Init from localStorage ======
+// ====== Init ======
 (function init(){
   try{ const raw = localStorage.getItem(LS_KEY); if(raw) players = JSON.parse(raw)||[]; }catch{}
   try{ const rp = localStorage.getItem(PAR_KEY); if(rp) par = {...par, ...(JSON.parse(rp)||{})}; }catch{}
@@ -204,10 +202,11 @@ const sampleNote = document.getElementById('sampleNote');
   document.getElementById('parR4').value = par.r4 ?? '';
   render();
   if(players.length===0){
-    sampleNote.innerHTML = `Sample CSV (copy to a file and import):<br><pre style="white-space:pre-wrap;margin:8px 0;">id,FirstName,LastName,nickname,team,handicap,r1,r2,r3,r4
-1,Nick Brown,Frenzy,Ozark,12,77,76,75,74
-2,Long Ball,,Valley,10,80,,,
-3,Ada Lovelace,,Ozark,15,,78,,77</pre>`;
+    sampleNote.innerHTML = `Example CSV/TSV (copy/paste):
+<pre style="white-space:pre-wrap;margin:8px 0;">FirstName,LastName,Nickname,Team,Email,Phone,handicap,R1,R2,R3,R4
+Nick,Brown,Frenzy,Ozark,nick@example.com,555-1234,12,77,76,75,74
+Long,Ball,,Valley,long@example.com,555-5678,10,80,,,
+</pre>`;
   } else {
     sampleNote.classList.add('hidden');
   }
@@ -244,35 +243,90 @@ function readCSVFile(file){
   const reader = new FileReader();
   reader.onload = () => {
     let text = String(reader.result||'');
-    // Strip BOM if present (Excel/Numbers)
-    text = text.replace(/^﻿/, '');
+    // Strip BOM if present (Excel/Numbers often add it)
+    text = text.replace(/^\uFEFF/, '');
     const rows = parseCSV(text);
     if(rows.length===0) return;
-    const headers = rows[0].map(h=>String(h||'').replace(/^﻿/, '').trim().toLowerCase());
-    const idx = (name)=>headers.indexOf(name);
-    const iId = idx('id'), iName = idx('name'), iNick = idx('nickname');
-    const iTeam = idx('team');
-    const iHcp = idx('handicap');
-    const iR1 = idx('r1'), iR2 = idx('r2'), iR3 = idx('r3'), iR4 = idx('r4');
+
+    // normalize headers: lowercase + trim + remove spaces/underscores + strip BOM
+    const norm = s => String(s||'')
+      .replace(/^\uFEFF/, '')
+      .trim()
+      .toLowerCase()
+      .replace(/\s+/g,'')
+      .replace(/_/g,'');
+    const headers = rows[0].map(norm);
+    const find = (...cands)=>{ for(const c of cands){ const i=headers.indexOf(c); if(i>-1) return i; } return -1; };
+
+    const iId    = find('id');
+    const iFirst = find('firstname','first');
+    const iLast  = find('lastname','last');
+    const iName  = find('name','player');
+    const iNick  = find('nickname','nick','alias');
+    const iTeam  = find('team');
+    const iEmail = find('email');
+    const iPhone = find('phone','phonenumber');
+    const iHcap  = find('handicap','hcp','index');
+    const iR1 = find('r1','round1','day1');
+    const iR2 = find('r2','round2','day2');
+    const iR3 = find('r3','round3','day3');
+    const iR4 = find('r4','round4','day4');
+
+    const toNum = v => { const n = Number(String(v||'').trim()); return Number.isFinite(n) ? n : null; };
+    const get   = (row, i) => i>-1 ? row[i] : '';
 
     const out = [];
     for(let r=1; r<rows.length; r++){
       const row = rows[r]; if(!row || row.length===0) continue;
-      const name = (row[iName]||'').trim();
-      if(!name) continue; // skip nameless
-      const toNum = (v)=>{ const n = Number((v||'').toString().trim()); return Number.isFinite(n) ? n : null; };
+
+      const first = iFirst>-1 ? String(get(row,iFirst)).trim() : '';
+      const last  = iLast >-1 ? String(get(row,iLast)).trim()  : '';
+      // Support single Name column as fallback
+      let name    = iName >-1 ? String(get(row,iName)).trim() : `${first} ${last}`.trim();
+      let splitFirst = first, splitLast = last;
+      if(!first && !last && name){
+        const parts = name.split(/\s+/);
+        splitFirst = parts.shift() || '';
+        splitLast = parts.join(' ');
+      }
+      if(!(name || splitFirst || splitLast)) continue;
+
       out.push({
-        id: (row[iId]||'').toString().trim() || String(r),
-        name,
-        nickname: (row[iNick]||'').toString().trim()||'',
-        team: (row[iTeam]||'').toString().trim()||'',
-        handicap: toNum(row[iHcp]),
-        r1: toNum(row[iR1]), r2: toNum(row[iR2]), r3: toNum(row[iR3]), r4: toNum(row[iR4]),
+        id: (iId>-1 ? String(get(row,iId)).trim() : '') || String(r),
+        firstName: splitFirst,
+        lastName: splitLast,
+        name: name || `${splitFirst} ${splitLast}`.trim(),
+        nickname: String(get(row,iNick)).trim(),
+        team: String(get(row,iTeam)).trim(),
+        email: String(get(row,iEmail)).trim(),
+        phone: String(get(row,iPhone)).trim(),
+        handicap: toNum(get(row,iHcap)),
+        r1: iR1>-1 ? toNum(get(row,iR1)) : null,
+        r2: iR2>-1 ? toNum(get(row,iR2)) : null,
+        r3: iR3>-1 ? toNum(get(row,iR3)) : null,
+        r4: iR4>-1 ? toNum(get(row,iR4)) : null,
       });
     }
+
     players = out; save(); render();
     btnExportCSV.disabled = btnExportJSON.disabled = btnClear.disabled = players.length===0;
-    sampleNote.classList.add('hidden');
+
+    // Diagnostic if nothing imported
+    if(players.length===0){
+      const firstLine = (text.split(/\r?\n/)[0] || '');
+      const counts = { ',': (firstLine.match(/,/g)||[]).length,
+                       '\t': (firstLine.match(/\t/g)||[]).length,
+                       ';': (firstLine.match(/;/g)||[]).length };
+      const delimName = counts['\t']>counts[','] ? 'Tab' : (counts[';']>counts[','] ? 'Semicolon' : 'Comma');
+      const hdrSeen = rows[0] ? rows[0].join(' | ') : '(none)';
+      sampleNote.classList.remove('hidden');
+      sampleNote.innerHTML = `No rows imported. Check your delimiter and headers.<br>
+      <strong>Detected delimiter:</strong> ${delimName}<br>
+      <strong>Headers seen:</strong> ${escapeHtml(hdrSeen)}<br>
+      Expected includes: FirstName/LastName (or Name), Nickname, Team, Email, Phone, handicap, and optional R1–R4.`;
+    } else {
+      sampleNote.classList.add('hidden');
+    }
   };
   reader.readAsText(file);
 }
@@ -282,22 +336,29 @@ sortSel.addEventListener('change', ()=>{ sortBy = sortSel.value; render(); });
 
 function sorter(a,b){
   const tot = (p)=>[p.r1,p.r2,p.r3,p.r4].reduce((s,v)=>s+(Number.isFinite(v)?v:0),0);
-  if(sortBy==='name') return (a.name||'').localeCompare(b.name||'');
+  const cmpName = (x,y)=>{
+    const xl=(x.lastName||'').toLowerCase(), yl=(y.lastName||'').toLowerCase();
+    if(xl!==yl) return xl<yl?-1:1;
+    const xf=(x.firstName||'').toLowerCase(), yf=(y.firstName||'').toLowerCase();
+    if(xf!==yf) return xf<yf?-1:1;
+    return 0;
+  };
+  if(sortBy==='name') return cmpName(a,b);
   if(sortBy==='r1'||sortBy==='r2'||sortBy==='r3'||sortBy==='r4'){
     const k=sortBy; const av=a[k]??Infinity, bv=b[k]??Infinity;
-    return av-bv || (a.name||'').localeCompare(b.name||'');
+    return av-bv || cmpName(a,b);
   }
-  return tot(a)-tot(b) || (a.name||'').localeCompare(b.name||'');
+  return tot(a)-tot(b) || cmpName(a,b);
 }
-
 
 // ====== Render ======
 function render(){
   btnExportCSV.disabled = btnExportJSON.disabled = btnClear.disabled = players.length===0;
-  // headers
+
   const colsOverall = [
     {key:'rank', label:'#'},
-    {key:'name', label:'Player'},
+    {key:'firstName', label:'First'},
+    {key:'lastName', label:'Last'},
     {key:'team', label:'Team'},
     {key:'handicap', label:'HCP'},
     {key:'r1', label:'R1'},
@@ -310,7 +371,8 @@ function render(){
   ];
   const single = (r)=>[
     {key:'rank', label:'#'},
-    {key:'name', label:'Player'},
+    {key:'firstName', label:'First'},
+    {key:'lastName', label:'Last'},
     {key:'team', label:'Team'},
     {key:'handicap', label:'HCP'},
     {key:r, label:r.toUpperCase()},
@@ -318,57 +380,57 @@ function render(){
     {key:'netTotal', label:'Net'},
     {key:'toPar', label:'± Par (Gross)'}
   ];
+
   const cols = view==='overall' ? colsOverall : single(view);
   thead.innerHTML = '<tr>'+cols.map(c=>`<th>${c.label}</th>`).join('')+'</tr>';
 
-  // data rows
   const rows = [...players].sort(sorter).map((p,i)=>{
     const total = sum([p.r1,p.r2,p.r3,p.r4]);
     const net = calcNetTotal(p, total);
     const toPar = calcToPar(p);
     return {p, i, total, netTotal: net, toPar};
   });
-  });
 
-  // ranking with ties (shared rank)
   rows.sort((a,b)=>{
-    if(sortBy==='name') return (a.p.name||'').localeCompare(b.p.name||'');
+    if(sortBy==='name') return (a.p.lastName||'').localeCompare(b.p.lastName||'') || (a.p.firstName||'').localeCompare(b.p.firstName||'');
     if(sortBy==='r1'||sortBy==='r2'||sortBy==='r3'||sortBy==='r4'){
-      const k=sortBy; return (a.p[k]??Infinity)-(b.p[k]??Infinity) || (a.p.name||'').localeCompare(b.p.name||'');
+      const k=sortBy; return (a.p[k]??Infinity)-(b.p[k]??Infinity) || (a.p.lastName||'').localeCompare(b.p.lastName||'') || (a.p.firstName||'').localeCompare(b.p.firstName||'');
     }
-    return a.total-b.total || (a.p.name||'').localeCompare(b.p.name||'');
+    return a.total-b.total || (a.p.lastName||'').localeCompare(b.p.lastName||'') || (a.p.firstName||'').localeCompare(b.p.firstName||'');
   });
 
   let rank = 0, lastMetric = null, seen = 0;
   rows.forEach(row=>{
-    const metric = (sortBy==='name') ? (row.p.name||'') : (sortBy==='r1'||sortBy==='r2'||sortBy==='r3'||sortBy==='r4') ? (row.p[sortBy]??Infinity) : row.total;
+    const metric = (sortBy==='name')
+      ? `${row.p.lastName||''},${row.p.firstName||''}`
+      : (sortBy==='r1'||sortBy==='r2'||sortBy==='r3'||sortBy==='r4') ? (row.p[sortBy]??Infinity) : row.total;
     seen++;
     if(metric!==lastMetric){ rank = seen; lastMetric = metric; }
     row.rank = rank;
   });
 
   tbody.innerHTML = rows.map(row=>renderRow(row, cols)).join('');
-  // hook up editors
   rows.forEach(row=>bindRowInputs(row.p));
   countHint.textContent = `${players.length} player${players.length===1?'':'s'}`;
 }
 
 function renderRow(row, cols){
   const {p, rank, total, toPar} = row;
-  const esc = (s)=>String(s).replace(/[&<>]/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));
+  const esc = (s)=>String(s).replace(/[&<>]/g, c=>({"&":"&amp;","<":"&lt;","<": "&lt;",">":"&gt;"}[c]));
   const cell = (key)=>{
     if(key==='rank') return `<td class="rank">${rank}</td>`;
-    if(key==='name'){
-      const nm = esc(p.name||'');
+    if(key==='firstName'){
+      const fn = esc(p.firstName||'');
       const nn = esc(p.nickname||'');
-      return `<td>${nm}${p.nickname?` <span class="hint">(${nn})</span>`:''}</td>`;
+      return `<td>${fn}${p.nickname?` <span class="hint">(${nn})</span>`:''}</td>`;
     }
+    if(key==='lastName') return `<td>${esc(p.lastName||'')}</td>`;
     if(key==='team') return `<td>${esc(p.team||'')}</td>`;
+    if(key==='handicap') return `<td class="num">${Number.isFinite(p.handicap)?p.handicap:''}</td>`;
     if(['r1','r2','r3','r4'].includes(key)){
       const val = p[key] ?? '';
       return `<td><input type="number" class="score" data-id="${p.id}" data-key="${key}" value="${val}" min="0"/></td>`;
     }
-    if(key==='handicap') return `<td class="num">${Number.isFinite(p.handicap)?p.handicap:''}</td>`;
     if(key==='total') return `<td class="num">${Number.isFinite(total)?total:''}</td>`;
     if(key==='netTotal') return `<td class="num">${Number.isFinite(row.netTotal)?row.netTotal:''}</td>`;
     if(key==='toPar') return `<td class="num">${fmtToPar(toPar)}</td>`;
@@ -401,9 +463,6 @@ function calcNetTotal(p, grossTotal){
   const h = Number.isFinite(p.handicap) ? p.handicap : null;
   if(!Number.isFinite(grossTotal) || h==null) return null;
   return Math.max(0, grossTotal - h);
-}
-  const totalScore = sum(scores);
-  return havePar ? (totalScore - totalPar) : null;
 }
 function fmtToPar(n){ if(n==null || !Number.isFinite(n)) return ''; return (n>0?'+':'')+n; }
 function escapeHtml(s){ return String(s).replace(/[&<>]/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c])); }
