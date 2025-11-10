@@ -1,0 +1,390 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>4‑Round Tournament Scoreboard</title>
+  <style>
+    :root{
+      --green:#244f3c; --green-dark:#163023; --gold:#d1a14b; --cream:#f5f0e6; --bg:#fcfaf6; --text:#222;
+      --radius:14px; --shadow:0 10px 28px rgba(0,0,0,.08);
+    }
+    *{box-sizing:border-box}
+    html,body{height:100%}
+    body{margin:0;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,"Segoe UI",sans-serif;}
+    .wrap{max-width:1100px;margin:24px auto;padding:16px}
+    h1{margin:0 0 10px;font-weight:700;color:var(--green)}
+    .sub{color:#555;margin:0 0 18px}
+
+    .panel{background:var(--cream);border:1px solid #e7e1d6;border-radius:var(--radius);box-shadow:var(--shadow);padding:14px;margin:12px 0}
+    .row{display:flex;gap:12px;flex-wrap:wrap;align-items:center}
+
+    .btn{appearance:none;border:1px solid var(--green);background:var(--green);color:#fff;padding:10px 14px;border-radius:10px;font-weight:600;cursor:pointer}
+    .btn.secondary{background:#fff;color:var(--green)}
+    .btn:disabled{opacity:.5;cursor:not-allowed}
+
+    input[type="number"], input[type="text"], input[type="file"], select{padding:8px 10px;border:1px solid #c9c3b8;border-radius:10px;background:#fff}
+    input[type="number"]{width:80px}
+
+    .drop{border:2px dashed #cbbfa9;border-radius:14px;padding:14px;text-align:center;color:#6b614f;background:#fff}
+    .drop.drag{border-color:var(--gold);background:#fff8ea}
+
+    .tabs{display:flex;gap:6px;margin:10px 0}
+    .tab{padding:8px 12px;border:1px solid #d8d0c2;border-radius:999px;background:#fff;cursor:pointer;font-weight:600;color:#3a3a3a}
+    .tab.active{background:var(--green);border-color:var(--green);color:#fff}
+
+    table{width:100%;border-collapse:collapse;background:#fff;border-radius:14px;overflow:hidden}
+    thead th{position:sticky;top:0;background:#f7f4ed;border-bottom:1px solid #e5ddcf;padding:10px;font-size:14px;text-align:left}
+    tbody td{border-bottom:1px solid #efe8db;padding:8px}
+    tbody tr:nth-child(odd){background:#faf7f1}
+    .num{text-align:right}
+    .rank{font-weight:700}
+
+    .footer{display:flex;gap:8px;justify-content:space-between;align-items:center;margin-top:10px}
+    .hint{color:#6b614f;font-size:13px}
+
+    .hidden{display:none}
+    .pill{display:inline-flex;align-items:center;gap:6px;background:#fff;padding:6px 10px;border-radius:999px;border:1px solid #e0d7c6}
+
+    .notice{background:#fff3cd;border:1px solid #ffe69c;border-radius:10px;color:#604c00;padding:10px}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>4‑Round Tournament Scoreboard</h1>
+    <p class="sub">Import a CSV of players, edit round scores inline, and export your updates. Rounds are R1–R4; totals and rankings update automatically.</p>
+
+    <div class="panel">
+      <div class="row">
+        <label class="pill"><strong>Par (optional):</strong>
+          <input type="number" id="parR1" placeholder="R1" min="0"/>
+          <input type="number" id="parR2" placeholder="R2" min="0"/>
+          <input type="number" id="parR3" placeholder="R3" min="0"/>
+          <input type="number" id="parR4" placeholder="R4" min="0"/>
+        </label>
+        <select id="sortBy">
+          <option value="total">Sort: Total (asc)</option>
+          <option value="r1">Sort: Round 1</option>
+          <option value="r2">Sort: Round 2</option>
+          <option value="r3">Sort: Round 3</option>
+          <option value="r4">Sort: Round 4</option>
+          <option value="name">Sort: Name (A→Z)</option>
+        </select>
+        <button class="btn" id="btnExportCSV" disabled>Export CSV</button>
+        <button class="btn secondary" id="btnExportJSON" disabled>Export JSON</button>
+        <button class="btn secondary" id="btnClear" disabled>Clear Board</button>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="row">
+        <input type="file" id="fileInput" accept=".csv" />
+        <div class="drop" id="drop">Drop CSV here or click Choose File</div>
+      </div>
+      <p class="hint">CSV columns supported (flexible order): <code>id</code>, <code>name</code>, <code>nickname</code>, <code>team</code>, <code>r1</code>, <code>r2</code>, <code>r3</code>, <code>r4</code>. Unknown columns are ignored. Missing rounds default to blank.</p>
+      <div class="notice" id="sampleNote"></div>
+    </div>
+
+    <div class="tabs" id="tabs">
+      <button class="tab active" data-view="overall">Overall</button>
+      <button class="tab" data-view="r1">Round 1</button>
+      <button class="tab" data-view="r2">Round 2</button>
+      <button class="tab" data-view="r3">Round 3</button>
+      <button class="tab" data-view="r4">Round 4</button>
+    </div>
+
+    <div class="panel">
+      <div style="overflow:auto;border-radius:14px">
+        <table id="board">
+          <thead id="thead"></thead>
+          <tbody id="tbody"></tbody>
+        </table>
+      </div>
+      <div class="footer">
+        <span class="hint" id="countHint">0 players</span>
+        <span class="hint">Edits auto‑save to your browser.</span>
+      </div>
+    </div>
+  </div>
+
+<script>
+// ====== Utility: Robust-ish CSV parser (handles quotes, commas, newlines) ======
+function parseCSV(text){
+  const rows=[]; let i=0, field='', row=[], inQuotes=false;
+  while(i<text.length){
+    const c=text[i++];
+    if(inQuotes){
+      if(c==='"'){
+        if(text[i]==='"'){ field+='"'; i++; }
+        else inQuotes=false;
+      } else field+=c;
+    } else {
+      if(c==='"') inQuotes=true;
+      else if(c===','){ row.push(field); field=''; }
+      else if(c==='\n' || c==='\r'){
+        if(field!=='' || row.length){ row.push(field); rows.push(row); row=[]; field=''; }
+        // swallow Windows CRLF
+        if(c==='\r' && text[i]==='\n') i++;
+      } else field+=c;
+    }
+  }
+  if(field!=='' || row.length) { row.push(field); rows.push(row); }
+  return rows;
+}
+function toCSV(arr){
+  const esc = v=>{
+    if(v==null) return '';
+    const s=String(v);
+    return /[",\n\r]/.test(s) ? '"'+s.replace(/"/g,'""')+'"' : s;
+  };
+  const headers=['id','name','nickname','team','r1','r2','r3','r4'];
+  const lines=[headers.join(',')];
+  for(const p of arr){
+    lines.push([
+      p.id||'',p.name||'',p.nickname||'',p.team||'',
+      p.r1??'',p.r2??'',p.r3??'',p.r4??''
+    ].map(esc).join(','));
+  }
+  return lines.join('\n');
+}
+
+// ====== Storage Keys ======
+const LS_KEY = 'scoreboard_players_v1';
+const PAR_KEY = 'scoreboard_par_v1';
+
+// ====== State ======
+let players = []; // {id,name,nickname,team,r1..r4}
+let view = 'overall';
+let sortBy = 'total';
+let par = { r1:null, r2:null, r3:null, r4:null };
+
+// ====== Elements ======
+const thead = document.getElementById('thead');
+const tbody = document.getElementById('tbody');
+const fileInput = document.getElementById('fileInput');
+const drop = document.getElementById('drop');
+const sortSel = document.getElementById('sortBy');
+const countHint = document.getElementById('countHint');
+const btnExportCSV = document.getElementById('btnExportCSV');
+const btnExportJSON = document.getElementById('btnExportJSON');
+const btnClear = document.getElementById('btnClear');
+const sampleNote = document.getElementById('sampleNote');
+
+// Par inputs
+['parR1','parR2','parR3','parR4'].forEach((id, idx)=>{
+  const k = 'r'+(idx+1);
+  const el = document.getElementById(id);
+  el.addEventListener('input', ()=>{
+    const v = el.value === '' ? null : Number(el.value);
+    par[k] = Number.isFinite(v) ? v : null; savePar(); render();
+  });
+});
+
+// ====== Init from localStorage ======
+(function init(){
+  try{ const raw = localStorage.getItem(LS_KEY); if(raw) players = JSON.parse(raw)||[]; }catch{}
+  try{ const rp = localStorage.getItem(PAR_KEY); if(rp) par = {...par, ...(JSON.parse(rp)||{})}; }catch{}
+  document.getElementById('parR1').value = par.r1 ?? '';
+  document.getElementById('parR2').value = par.r2 ?? '';
+  document.getElementById('parR3').value = par.r3 ?? '';
+  document.getElementById('parR4').value = par.r4 ?? '';
+  render();
+  if(players.length===0){
+    sampleNote.innerHTML = `Sample CSV (copy to a file and import):<br><pre style="white-space:pre-wrap;margin:8px 0;">id,name,nickname,team,r1,r2,r3,r4\n1,Nick Brown,Frenzy,Ozark,77,76,75,74\n2,Long Ball,,Valley,80,,,\n3,Ada Lovelace,,Ozark,,78,,77</pre>`;
+  } else {
+    sampleNote.classList.add('hidden');
+  }
+})();
+
+function save(){ localStorage.setItem(LS_KEY, JSON.stringify(players)); }
+function savePar(){ localStorage.setItem(PAR_KEY, JSON.stringify(par)); }
+
+// ====== Tabs ======
+const tabs = document.getElementById('tabs');
+Array.from(tabs.querySelectorAll('.tab')).forEach(btn=>{
+  btn.addEventListener('click', ()=>{
+    Array.from(tabs.children).forEach(b=>b.classList.remove('active'));
+    btn.classList.add('active');
+    view = btn.dataset.view; render();
+  });
+});
+
+// ====== File / Drag & Drop ======
+fileInput.addEventListener('change', handleFiles);
+function handleFiles(){ if(this.files && this.files[0]) readCSVFile(this.files[0]); }
+
+;['dragenter','dragover'].forEach(ev=>drop.addEventListener(ev, e=>{ e.preventDefault(); drop.classList.add('drag'); }));
+;['dragleave','drop'].forEach(ev=>drop.addEventListener(ev, e=>{ e.preventDefault(); drop.classList.remove('drag'); }));
+
+drop.addEventListener('drop', e=>{
+  const f = e.dataTransfer.files && e.dataTransfer.files[0];
+  if(f) readCSVFile(f);
+});
+
+drop.addEventListener('click', ()=>fileInput.click());
+
+function readCSVFile(file){
+  const reader = new FileReader();
+  reader.onload = () => {
+    const rows = parseCSV(String(reader.result||''));
+    if(rows.length===0) return;
+    const headers = rows[0].map(h=>h.trim().toLowerCase());
+    const idx = (name)=>headers.indexOf(name);
+    const iId = idx('id'), iName = idx('name'), iNick = idx('nickname');
+    const iTeam = idx('team');
+    const iR1 = idx('r1'), iR2 = idx('r2'), iR3 = idx('r3'), iR4 = idx('r4');
+
+    const out = [];
+    for(let r=1; r<rows.length; r++){
+      const row = rows[r]; if(!row || row.length===0) continue;
+      const name = (row[iName]||'').trim();
+      if(!name) continue; // skip nameless
+      const toNum = (v)=>{ const n = Number((v||'').trim()); return Number.isFinite(n) ? n : null; };
+      out.push({
+        id: (row[iId]||'').trim() || String(r),
+        name,
+        nickname: (row[iNick]||'').trim()||'',
+        team: (row[iTeam]||'').trim()||'',
+        r1: toNum(row[iR1]), r2: toNum(row[iR2]), r3: toNum(row[iR3]), r4: toNum(row[iR4]),
+      });
+    }
+    players = out; save(); render();
+    btnExportCSV.disabled = btnExportJSON.disabled = btnClear.disabled = players.length===0;
+    sampleNote.classList.add('hidden');
+  };
+  reader.readAsText(file);
+}
+
+// ====== Sorting ======
+sortSel.addEventListener('change', ()=>{ sortBy = sortSel.value; render(); });
+
+function sorter(a,b){
+  const tot = (p)=>[p.r1,p.r2,p.r3,p.r4].reduce((s,v)=>s+(Number.isFinite(v)?v:0),0);
+  if(sortBy==='name') return (a.name||'').localeCompare(b.name||'');
+  if(sortBy==='r1'||sortBy==='r2'||sortBy==='r3'||sortBy==='r4'){
+    const k=sortBy; const av=a[k]??Infinity, bv=b[k]??Infinity;
+    return av-bv || (a.name||'').localeCompare(b.name||'');
+  }
+  // default total
+  return tot(a)-tot(b) || (a.name||'').localeCompare(b.name||'');
+}
+
+// ====== Render ======
+function render(){
+  btnExportCSV.disabled = btnExportJSON.disabled = btnClear.disabled = players.length===0;
+  // headers
+  const colsOverall = [
+    {key:'rank', label:'#'},
+    {key:'name', label:'Player'},
+    {key:'team', label:'Team'},
+    {key:'r1', label:'R1'},
+    {key:'r2', label:'R2'},
+    {key:'r3', label:'R3'},
+    {key:'r4', label:'R4'},
+    {key:'total', label:'Total'},
+    {key:'toPar', label:'± Par'}
+  ];
+  const single = (r)=>[
+    {key:'rank', label:'#'},
+    {key:'name', label:'Player'},
+    {key:'team', label:'Team'},
+    {key:r, label:r.toUpperCase()},
+    {key:'total', label:'Total'},
+    {key:'toPar', label:'± Par'}
+  ];
+  const cols = view==='overall' ? colsOverall : single(view);
+  thead.innerHTML = '<tr>'+cols.map(c=>`<th>${c.label}</th>`).join('')+'</tr>';
+
+  // data rows
+  const rows = [...players].sort(sorter).map((p,i)=>{
+    const total = sum([p.r1,p.r2,p.r3,p.r4]);
+    const toPar = calcToPar(p);
+    return {p, i, total, toPar};
+  });
+
+  // ranking with ties (shared rank)
+  rows.sort((a,b)=>{
+    if(sortBy==='name') return a.p.name.localeCompare(b.p.name);
+    if(sortBy==='r1'||sortBy==='r2'||sortBy==='r3'||sortBy==='r4'){
+      const k=sortBy; return (a.p[k]??Infinity)-(b.p[k]??Infinity) || a.p.name.localeCompare(b.p.name);
+    }
+    return a.total-b.total || a.p.name.localeCompare(b.p.name);
+  });
+
+  let rank = 0, lastMetric = null, seen = 0;
+  rows.forEach(row=>{
+    const metric = (sortBy==='name') ? row.p.name : (sortBy==='r1'||sortBy==='r2'||sortBy==='r3'||sortBy==='r4') ? (row.p[sortBy]??Infinity) : row.total;
+    seen++;
+    if(metric!==lastMetric){ rank = seen; lastMetric = metric; }
+    row.rank = rank;
+  });
+
+  tbody.innerHTML = rows.map(row=>renderRow(row, cols)).join('');
+  // hook up editors
+  rows.forEach(row=>bindRowInputs(row.p));
+  countHint.textContent = `${players.length} player${players.length===1?'':'s'}`;
+}
+
+function renderRow(row, cols){
+  const {p, rank, total, toPar} = row;
+  const cell = (key)=>{
+    if(key==='rank') return `<td class="rank">${rank}</td>`;
+    if(key==='name') return `<td>${escapeHtml(p.nickname?`${p.name} <span class=\"hint\">(${p.nickname})</span>`:p.name)}</td>`;
+    if(key==='team') return `<td>${escapeHtml(p.team||'')}</td>`;
+    if(['r1','r2','r3','r4'].includes(key)){
+      const val = p[key] ?? '';
+      return `<td><input type="number" class="score" data-id="${p.id}" data-key="${key}" value="${val}" min="0"/></td>`;
+    }
+    if(key==='total') return `<td class="num">${Number.isFinite(total)?total:''}</td>`;
+    if(key==='toPar') return `<td class="num">${fmtToPar(toPar)}</td>`;
+    return `<td></td>`;
+  };
+  return '<tr>'+cols.map(c=>cell(c.key)).join('')+'</tr>';
+}
+
+function bindRowInputs(p){
+  document.querySelectorAll(`input.score[data-id="${CSS.escape(p.id)}"]`).forEach(inp=>{
+    inp.addEventListener('input', ()=>{
+      const key = inp.dataset.key; const v = inp.value.trim();
+      const num = v===''? null : Number(v);
+      p[key] = Number.isFinite(num)? num : null;
+      save(); render();
+    });
+  });
+}
+
+function sum(arr){ return arr.reduce((s,v)=>s+(Number.isFinite(v)?v:0),0); }
+function calcToPar(p){
+  const rPar = [par.r1, par.r2, par.r3, par.r4];
+  const scores = [p.r1,p.r2,p.r3,p.r4];
+  let totalPar = 0, havePar=false;
+  for(let i=0;i<4;i++) if(Number.isFinite(rPar[i])){ totalPar += rPar[i]; havePar=true; }
+  const totalScore = sum(scores);
+  return havePar ? (totalScore - totalPar) : null;
+}
+function fmtToPar(n){ if(n==null || !Number.isFinite(n)) return ''; return (n>0?'+':'')+n; }
+function escapeHtml(s){ return String(s).replace(/[&<>]/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c])); }
+
+// ====== Exports & Clear ======
+btnExportCSV.addEventListener('click', ()=>{
+  const csv = toCSV(players);
+  downloadFile('scoreboard_updated.csv', csv, 'text/csv');
+});
+btnExportJSON.addEventListener('click', ()=>{
+  const json = JSON.stringify(players, null, 2);
+  downloadFile('scoreboard_updated.json', json, 'application/json');
+});
+btnClear.addEventListener('click', ()=>{
+  if(!confirm('Clear all loaded players and local scores?')) return;
+  players = []; save(); render();
+});
+
+function downloadFile(name, content, mime){
+  const blob = new Blob([content], {type:mime});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a'); a.href=url; a.download=name; a.click();
+  setTimeout(()=>URL.revokeObjectURL(url), 1000);
+}
+</script>
+</body>
+</html>
