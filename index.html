@@ -78,7 +78,7 @@
 
     <div class="panel">
       <div class="row">
-        <input type="file" id="fileInput" accept=".csv" />
+        <input type="file" id="fileInput" accept=".csv,.tsv,.txt" />
         <div class="drop" id="drop">Drop CSV here or click Choose File</div>
       </div>
       <p class="hint">CSV columns supported (flexible order): <code>id</code>, <code>name</code>, <code>nickname</code>, <code>team</code>, <code>r1</code>, <code>r2</code>, <code>r3</code>, <code>r4</code>. Unknown columns are ignored. Missing rounds default to blank.</p>
@@ -110,6 +110,14 @@
 <script>
 // ====== Utility: Robust-ish CSV parser (handles quotes, commas, newlines) ======
 function parseCSV(text){
+  // Auto-detect delimiter: prefer tab if present, else comma; fallback to semicolon
+  const firstLine = String(text).split(/
+?
+/)[0] || '';
+  const counts = {",": (firstLine.match(/,/g)||[]).length, "	": (firstLine.match(/	/g)||[]).length, ";": (firstLine.match(/;/g)||[]).length };
+  let delim = ",";
+  if(counts["	"] > counts[","]) delim = "	"; else if(counts[";"] > counts[","]) delim = ";";
+
   const rows=[]; let i=0, field='', row=[], inQuotes=false;
   while(i<text.length){
     const c=text[i++];
@@ -120,11 +128,14 @@ function parseCSV(text){
       } else field+=c;
     } else {
       if(c==='"') inQuotes=true;
-      else if(c===','){ row.push(field); field=''; }
-      else if(c==='\n' || c==='\r'){
+      else if(c===delim){ row.push(field); field=''; }
+      else if(c==='
+' || c==='
+'){
         if(field!=='' || row.length){ row.push(field); rows.push(row); row=[]; field=''; }
-        // swallow Windows CRLF
-        if(c==='\r' && text[i]==='\n') i++;
+        if(c==='
+' && text[i]==='
+') i++; // CRLF
       } else field+=c;
     }
   }
@@ -260,11 +271,20 @@ sortSel.addEventListener('change', ()=>{ sortBy = sortSel.value; render(); });
 
 function sorter(a,b){
   const tot = (p)=>[p.r1,p.r2,p.r3,p.r4].reduce((s,v)=>s+(Number.isFinite(v)?v:0),0);
-  if(sortBy==='name') return (a.name||'').localeCompare(b.name||'');
+  const cmpName = (x,y)=>{
+    const xl=(x.lastName||'').toLowerCase(), yl=(y.lastName||'').toLowerCase();
+    if(xl!==yl) return xl<yl?-1:1;
+    const xf=(x.firstName||'').toLowerCase(), yf=(y.firstName||'').toLowerCase();
+    if(xf!==yf) return xf<yf?-1:1;
+    return 0;
+  };
+  if(sortBy==='name') return cmpName(a,b);
   if(sortBy==='r1'||sortBy==='r2'||sortBy==='r3'||sortBy==='r4'){
     const k=sortBy; const av=a[k]??Infinity, bv=b[k]??Infinity;
-    return av-bv || (a.name||'').localeCompare(b.name||'');
+    return av-bv || cmpName(a,b);
   }
+  return tot(a)-tot(b) || cmpName(a,b);
+}
   // default total
   return tot(a)-tot(b) || (a.name||'').localeCompare(b.name||'');
 }
@@ -275,7 +295,8 @@ function render(){
   // headers
   const colsOverall = [
     {key:'rank', label:'#'},
-    {key:'name', label:'Player'},
+    {key:'firstName', label:'First'},
+    {key:'lastName', label:'Last'},
     {key:'team', label:'Team'},
     {key:'r1', label:'R1'},
     {key:'r2', label:'R2'},
@@ -286,7 +307,8 @@ function render(){
   ];
   const single = (r)=>[
     {key:'rank', label:'#'},
-    {key:'name', label:'Player'},
+    {key:'firstName', label:'First'},
+    {key:'lastName', label:'Last'},
     {key:'team', label:'Team'},
     {key:r, label:r.toUpperCase()},
     {key:'total', label:'Total'},
@@ -313,7 +335,7 @@ function render(){
 
   let rank = 0, lastMetric = null, seen = 0;
   rows.forEach(row=>{
-    const metric = (sortBy==='name') ? row.p.name : (sortBy==='r1'||sortBy==='r2'||sortBy==='r3'||sortBy==='r4') ? (row.p[sortBy]??Infinity) : row.total;
+    const metric = (sortBy==='name') ? `${row.p.lastName||''},${row.p.firstName||''}` : (sortBy==='r1'||sortBy==='r2'||sortBy==='r3'||sortBy==='r4') ? (row.p[sortBy]??Infinity) : row.total;
     seen++;
     if(metric!==lastMetric){ rank = seen; lastMetric = metric; }
     row.rank = rank;
@@ -330,11 +352,12 @@ function renderRow(row, cols){
   const esc = (s)=>String(s).replace(/[&<>]/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));
   const cell = (key)=>{
     if(key==='rank') return `<td class="rank">${rank}</td>`;
-    if(key==='name'){
-      const nm = esc(p.name||'');
+    if(key==='firstName'){
+      const fn = esc(p.firstName||'');
       const nn = esc(p.nickname||'');
-      return `<td>${nm}${p.nickname?` <span class="hint">(${nn})</span>`:''}</td>`;
+      return `<td>${fn}${p.nickname?` <span class="hint">(${nn})</span>`:''}</td>`;
     }
+    if(key==='lastName') return `<td>${esc(p.lastName||'')}</td>`;
     if(key==='team') return `<td>${esc(p.team||'')}</td>`;
     if(['r1','r2','r3','r4'].includes(key)){
       const val = p[key] ?? '';
