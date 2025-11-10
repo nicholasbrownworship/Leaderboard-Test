@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>4-Round Tournament Scoreboard</title>
+  <title>4‑Round Tournament Scoreboard</title>
   <style>
     :root{
       --green:#244f3c; --green-dark:#163023; --gold:#d1a14b; --cream:#f5f0e6; --bg:#fcfaf6; --text:#222;
@@ -51,8 +51,8 @@
 </head>
 <body>
   <div class="wrap">
-    <h1>4-Round Tournament Scoreboard</h1>
-    <p class="sub">Import your CSV, edit round scores inline, and export updates. Rounds are R1–R4; totals and rankings update live.</p>
+    <h1>4‑Round Tournament Scoreboard</h1>
+    <p class="sub">Import a CSV of players, edit round scores inline, and export your updates. Rounds are R1–R4; totals and rankings update automatically.</p>
 
     <div class="panel">
       <div class="row">
@@ -81,11 +81,7 @@
         <input type="file" id="fileInput" accept=".csv" />
         <div class="drop" id="drop">Drop CSV here or click Choose File</div>
       </div>
-      <p class="hint">
-        Accepted headers (any order, case-insensitive, spaces/underscores allowed):
-        <code>FirstName</code>, <code>LastName</code>, <code>Nickname</code>, <code>Team</code>, <code>Email</code>, <code>Phone</code>, <code>handicap</code>.
-        Optional rounds (if present): <code>R1</code>/<code>Round1</code>/<code>Day1</code> … up to 4.
-      </p>
+      <p class="hint">CSV columns supported (flexible order): <code>id</code>, <code>name</code>, <code>nickname</code>, <code>team</code>, <code>r1</code>, <code>r2</code>, <code>r3</code>, <code>r4</code>. Unknown columns are ignored. Missing rounds default to blank.</p>
       <div class="notice" id="sampleNote"></div>
     </div>
 
@@ -106,13 +102,13 @@
       </div>
       <div class="footer">
         <span class="hint" id="countHint">0 players</span>
-        <span class="hint">Edits auto-save to your browser.</span>
+        <span class="hint">Edits auto‑save to your browser.</span>
       </div>
     </div>
   </div>
 
 <script>
-// ====== CSV parser (handles quotes, commas, newlines) ======
+// ====== Utility: Robust-ish CSV parser (handles quotes, commas, newlines) ======
 function parseCSV(text){
   const rows=[]; let i=0, field='', row=[], inQuotes=false;
   while(i<text.length){
@@ -127,38 +123,37 @@ function parseCSV(text){
       else if(c===','){ row.push(field); field=''; }
       else if(c==='\n' || c==='\r'){
         if(field!=='' || row.length){ row.push(field); rows.push(row); row=[]; field=''; }
-        if(c==='\r' && text[i]==='\n') i++; // CRLF
+        // swallow Windows CRLF
+        if(c==='\r' && text[i]==='\n') i++;
       } else field+=c;
     }
   }
   if(field!=='' || row.length) { row.push(field); rows.push(row); }
   return rows;
 }
-
 function toCSV(arr){
   const esc = v=>{
     if(v==null) return '';
     const s=String(v);
     return /[",\n\r]/.test(s) ? '"'+s.replace(/"/g,'""')+'"' : s;
   };
-  // Export in your preferred header shape
-  const headers=['id','FirstName','LastName','Nickname','Team','Email','Phone','handicap','r1','r2','r3','r4'];
+  const headers=['id','name','nickname','team','r1','r2','r3','r4'];
   const lines=[headers.join(',')];
   for(const p of arr){
     lines.push([
-      p.id||'', p.firstName||'', p.lastName||'', p.nickname||'', p.team||'', p.email||'', p.phone||'', p.handicap||'',
-      p.r1??'', p.r2??'', p.r3??'', p.r4??''
+      p.id||'',p.name||'',p.nickname||'',p.team||'',
+      p.r1??'',p.r2??'',p.r3??'',p.r4??''
     ].map(esc).join(','));
   }
   return lines.join('\n');
 }
 
 // ====== Storage Keys ======
-const LS_KEY = 'scoreboard_players_v2';
+const LS_KEY = 'scoreboard_players_v1';
 const PAR_KEY = 'scoreboard_par_v1';
 
 // ====== State ======
-let players = []; // {id,firstName,lastName,name,nickname,team,email,phone,handicap,r1..r4}
+let players = []; // {id,name,nickname,team,r1..r4}
 let view = 'overall';
 let sortBy = 'total';
 let par = { r1:null, r2:null, r3:null, r4:null };
@@ -185,7 +180,7 @@ const sampleNote = document.getElementById('sampleNote');
   });
 });
 
-// ====== Init ======
+// ====== Init from localStorage ======
 (function init(){
   try{ const raw = localStorage.getItem(LS_KEY); if(raw) players = JSON.parse(raw)||[]; }catch{}
   try{ const rp = localStorage.getItem(PAR_KEY); if(rp) par = {...par, ...(JSON.parse(rp)||{})}; }catch{}
@@ -195,10 +190,7 @@ const sampleNote = document.getElementById('sampleNote');
   document.getElementById('parR4').value = par.r4 ?? '';
   render();
   if(players.length===0){
-    sampleNote.innerHTML = `Example CSV (copy/paste):
-<pre style="white-space:pre-wrap;margin:8px 0;">FirstName,LastName,Nickname,Team,Email,Phone,handicap
-Nick,Brown,Frenzy,Ozark,nick@example.com,555-1234,12
-Long,Ball,,Valley,long@example.com,555-5678,10</pre>`;
+    sampleNote.innerHTML = `Sample CSV (copy to a file and import):<br><pre style="white-space:pre-wrap;margin:8px 0;">id,name,nickname,team,r1,r2,r3,r4\n1,Nick Brown,Frenzy,Ozark,77,76,75,74\n2,Long Ball,,Valley,80,,,\n3,Ada Lovelace,,Ozark,,78,,77</pre>`;
   } else {
     sampleNote.classList.add('hidden');
   }
@@ -220,71 +212,42 @@ Array.from(tabs.querySelectorAll('.tab')).forEach(btn=>{
 // ====== File / Drag & Drop ======
 fileInput.addEventListener('change', handleFiles);
 function handleFiles(){ if(this.files && this.files[0]) readCSVFile(this.files[0]); }
+
 ;['dragenter','dragover'].forEach(ev=>drop.addEventListener(ev, e=>{ e.preventDefault(); drop.classList.add('drag'); }));
 ;['dragleave','drop'].forEach(ev=>drop.addEventListener(ev, e=>{ e.preventDefault(); drop.classList.remove('drag'); }));
+
 drop.addEventListener('drop', e=>{
   const f = e.dataTransfer.files && e.dataTransfer.files[0];
   if(f) readCSVFile(f);
 });
+
 drop.addEventListener('click', ()=>fileInput.click());
 
 function readCSVFile(file){
   const reader = new FileReader();
   reader.onload = () => {
-    const text = String(reader.result||'');
-    const rows = parseCSV(text);
+    const rows = parseCSV(String(reader.result||''));
     if(rows.length===0) return;
-
-    // normalize headers: lowercase+trim+remove spaces/underscores
-    const norm = s => String(s||'').trim().toLowerCase().replace(/\s+/g,'').replace(/_/g,'');
-    const headers = rows[0].map(norm);
-    const find = (...cands)=>{ for(const c of cands){ const i=headers.indexOf(c); if(i>-1) return i; } return -1; };
-
-    const iId    = find('id');
-    const iFirst = find('firstname','first');
-    const iLast  = find('lastname','last');
-    const iName  = find('name','player');
-    const iNick  = find('nickname','nick','alias');
-    const iTeam  = find('team');
-    const iEmail = find('email');
-    const iPhone = find('phone','phonenumber');
-    const iHcap  = find('handicap','hcp','index');
-
-    // optional rounds if provided: r1/r2/r3/r4 or round1..4 or day1..4
-    const iR1 = find('r1','round1','day1');
-    const iR2 = find('r2','round2','day2');
-    const iR3 = find('r3','round3','day3');
-    const iR4 = find('r4','round4','day4');
-
-    const toNum = v => { const n = Number(String(v||'').trim()); return Number.isFinite(n) ? n : null; };
-    const get   = (row, i) => i>-1 ? row[i] : '';
+    const headers = rows[0].map(h=>h.trim().toLowerCase());
+    const idx = (name)=>headers.indexOf(name);
+    const iId = idx('id'), iName = idx('name'), iNick = idx('nickname');
+    const iTeam = idx('team');
+    const iR1 = idx('r1'), iR2 = idx('r2'), iR3 = idx('r3'), iR4 = idx('r4');
 
     const out = [];
     for(let r=1; r<rows.length; r++){
       const row = rows[r]; if(!row || row.length===0) continue;
-
-      const first = iFirst>-1 ? String(get(row,iFirst)).trim() : '';
-      const last  = iLast >-1 ? String(get(row,iLast)).trim()  : '';
-      let name    = iName >-1 ? String(get(row,iName)).trim() : `${first} ${last}`.trim();
-      if(!name) continue;
-
+      const name = (row[iName]||'').trim();
+      if(!name) continue; // skip nameless
+      const toNum = (v)=>{ const n = Number((v||'').trim()); return Number.isFinite(n) ? n : null; };
       out.push({
-        id: (iId>-1 ? String(get(row,iId)).trim() : '') || String(r),
-        firstName:first,
-        lastName:last,
+        id: (row[iId]||'').trim() || String(r),
         name,
-        nickname: String(get(row,iNick)).trim(),
-        team: String(get(row,iTeam)).trim(),
-        email: String(get(row,iEmail)).trim(),
-        phone: String(get(row,iPhone)).trim(),
-        handicap: String(get(row,iHcap)).trim(),
-        r1: iR1>-1 ? toNum(get(row,iR1)) : null,
-        r2: iR2>-1 ? toNum(get(row,iR2)) : null,
-        r3: iR3>-1 ? toNum(get(row,iR3)) : null,
-        r4: iR4>-1 ? toNum(get(row,iR4)) : null,
+        nickname: (row[iNick]||'').trim()||'',
+        team: (row[iTeam]||'').trim()||'',
+        r1: toNum(row[iR1]), r2: toNum(row[iR2]), r3: toNum(row[iR3]), r4: toNum(row[iR4]),
       });
     }
-
     players = out; save(); render();
     btnExportCSV.disabled = btnExportJSON.disabled = btnClear.disabled = players.length===0;
     sampleNote.classList.add('hidden');
@@ -302,13 +265,14 @@ function sorter(a,b){
     const k=sortBy; const av=a[k]??Infinity, bv=b[k]??Infinity;
     return av-bv || (a.name||'').localeCompare(b.name||'');
   }
+  // default total
   return tot(a)-tot(b) || (a.name||'').localeCompare(b.name||'');
 }
 
 // ====== Render ======
 function render(){
   btnExportCSV.disabled = btnExportJSON.disabled = btnClear.disabled = players.length===0;
-
+  // headers
   const colsOverall = [
     {key:'rank', label:'#'},
     {key:'name', label:'Player'},
@@ -331,13 +295,14 @@ function render(){
   const cols = view==='overall' ? colsOverall : single(view);
   thead.innerHTML = '<tr>'+cols.map(c=>`<th>${c.label}</th>`).join('')+'</tr>';
 
+  // data rows
   const rows = [...players].sort(sorter).map((p,i)=>{
     const total = sum([p.r1,p.r2,p.r3,p.r4]);
     const toPar = calcToPar(p);
     return {p, i, total, toPar};
   });
 
-  // ranking with ties
+  // ranking with ties (shared rank)
   rows.sort((a,b)=>{
     if(sortBy==='name') return a.p.name.localeCompare(b.p.name);
     if(sortBy==='r1'||sortBy==='r2'||sortBy==='r3'||sortBy==='r4'){
@@ -348,25 +313,29 @@ function render(){
 
   let rank = 0, lastMetric = null, seen = 0;
   rows.forEach(row=>{
-    const metric = (sortBy==='name') ? row.p.name :
-                   (sortBy==='r1'||sortBy==='r2'||sortBy==='r3'||sortBy==='r4') ? (row.p[sortBy]??Infinity) :
-                   row.total;
+    const metric = (sortBy==='name') ? row.p.name : (sortBy==='r1'||sortBy==='r2'||sortBy==='r3'||sortBy==='r4') ? (row.p[sortBy]??Infinity) : row.total;
     seen++;
     if(metric!==lastMetric){ rank = seen; lastMetric = metric; }
     row.rank = rank;
   });
 
   tbody.innerHTML = rows.map(row=>renderRow(row, cols)).join('');
+  // hook up editors
   rows.forEach(row=>bindRowInputs(row.p));
   countHint.textContent = `${players.length} player${players.length===1?'':'s'}`;
 }
 
 function renderRow(row, cols){
   const {p, rank, total, toPar} = row;
+  const esc = (s)=>String(s).replace(/[&<>]/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));
   const cell = (key)=>{
     if(key==='rank') return `<td class="rank">${rank}</td>`;
-    if(key==='name') return `<td>${escapeHtml(p.nickname?`${p.name} <span class=\"hint\">(${p.nickname})</span>`:p.name)}</td>`;
-    if(key==='team') return `<td>${escapeHtml(p.team||'')}</td>`;
+    if(key==='name'){
+      const nm = esc(p.name||'');
+      const nn = esc(p.nickname||'');
+      return `<td>${nm}${p.nickname?` <span class="hint">(${nn})</span>`:''}</td>`;
+    }
+    if(key==='team') return `<td>${esc(p.team||'')}</td>`;
     if(['r1','r2','r3','r4'].includes(key)){
       const val = p[key] ?? '';
       return `<td><input type="number" class="score" data-id="${p.id}" data-key="${key}" value="${val}" min="0"/></td>`;
